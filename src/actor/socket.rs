@@ -921,6 +921,19 @@ mod test {
     /// the next datagram arrives. That blocks the runtime thread, so a tokio
     /// timeout cannot detect it. The receiver runs on its own thread, next
     /// to a ticker task that stops ticking while the receive spins.
+    ///
+    /// Only these targets receive through noq-udp's `recv_single`, so only
+    /// they can spin. Elsewhere noq-udp uses `recvmmsg` or `WSARecvMsg`, and
+    /// the oversized datagram would also exceed the UDP size limit when the
+    /// receive buffer holds a whole GRO batch.
+    #[cfg(any(
+        target_vendor = "apple",
+        target_os = "openbsd",
+        target_os = "netbsd",
+        target_os = "dragonfly",
+        target_os = "solaris",
+        target_os = "illumos"
+    ))]
     #[test]
     fn oversized_datagram_does_not_make_the_receiver_spin() {
         use std::sync::atomic::{AtomicUsize, Ordering};
