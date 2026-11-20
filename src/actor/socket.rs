@@ -914,6 +914,64 @@ mod test {
         assert_eq!(received, sent);
     }
 
+    /// A truncated datagram, with nothing queued behind it, must not make the
+    /// receiver spin.
+    ///
+    /// Some noq-udp versions loop in `recv` on a stale truncation flag until
+    /// the next datagram arrives. That blocks the runtime thread, so a tokio
+    /// timeout cannot detect it. The receiver runs on its own thread, next
+    /// to a ticker task that stops ticking while the receive spins.
+    #[test]
+    fn oversized_datagram_does_not_make_the_receiver_spin() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::{Arc, mpsc};
+
+        let ticks = Arc::new(AtomicUsize::new(0));
+        let (address_tx, address_rx) = mpsc::channel();
+        let (received_tx, received_rx) = mpsc::channel();
+        let ticker_ticks = ticks.clone();
+        std::thread::spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            runtime.block_on(async {
+                let mut io = UdpIo::bind(SocketAddr::from(([127, 0, 0, 1], 0))).unwrap();
+                address_tx
+                    .send((io.local_addr().unwrap(), io.batch.len()))
+                    .unwrap();
+                tokio::spawn(async move {
+                    let mut interval = tokio::time::interval(Duration::from_millis(10));
+                    loop {
+                        interval.tick().await;
+                        ticker_ticks.fetch_add(1, Ordering::SeqCst);
+                    }
+                });
+                let (_, len, _) = io.recv_batch().await.unwrap();
+                received_tx.send(len).unwrap();
+            });
+        });
+
+        let (destination, buffer_len) = address_rx.recv().unwrap();
+        let source = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        source
+            .send_to(&vec![7u8; buffer_len + 1], destination)
+            .unwrap();
+        std::thread::sleep(Duration::from_millis(300));
+        let before = ticks.load(Ordering::SeqCst);
+        std::thread::sleep(Duration::from_millis(200));
+        assert!(
+            ticks.load(Ordering::SeqCst) > before,
+            "the receiver spun after an oversized datagram"
+        );
+
+        source.send_to(b"after", destination).unwrap();
+        let len = received_rx
+            .recv_timeout(Duration::from_secs(10))
+            .expect("the next datagram is received");
+        assert_eq!(len, b"after".len());
+    }
+
     #[test]
     fn datagrams_split_at_the_stride() {
         let batch: Vec<u8> = (0..=255u8).cycle().take(300).collect();
