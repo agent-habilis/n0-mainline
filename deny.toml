@@ -19,4 +19,4 @@ yanked = "deny"
 ignore = []
 
 [sources]
-allow-git = []
+allow-git = ["https://github.com/agent-habilis/noq"]

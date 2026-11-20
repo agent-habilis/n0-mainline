@@ -699,9 +699,8 @@ dependencies = [
 
 [[package]]
 name = "noq-udp"
-version = "1.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8d0160422832eea1cc11c34be04ee6d5a046452b0b46cfb14695d55a1f24c954"
+version = "1.1.0"
+source = "git+https://github.com/agent-habilis/noq?rev=a3597b1f9fd4390b04c4915e8a4ded6c08331b28#a3597b1f9fd4390b04c4915e8a4ded6c08331b28"
 dependencies = [
  "cfg_aliases",
  "libc",
